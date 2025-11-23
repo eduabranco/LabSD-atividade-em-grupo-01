@@ -1,0 +1,8 @@
+Pergunta: Qual a quantidade de portas disponíveis no SO Linux?
+Resposta:
+No Linux (e sistemas TCP/IP em geral), as portas são representadas por um número inteiro de 16 bits (unsigned integer). Isso resulta em:
+Total: 65.536 portas (de 0 a 65.535).
+Intervalos:
+0 - 1023: Portas bem conhecidas (Privileged ports, requerem root).
+1024 - 49151: Portas registradas.
+49152 - 65535: Portas dinâmicas/efêmeras.
