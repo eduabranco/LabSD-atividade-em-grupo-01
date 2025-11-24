@@ -9,7 +9,7 @@
 #include <netinet/in.h>
 #include <netdb.h>
 
-#define SERVER_IP "127.0.0.1"
+#define SERVER_IP "192.168.99.23"
 #define SERVER_PORT 51482
 #define MAX_CODE_SIZE 4096
 
