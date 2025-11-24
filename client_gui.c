@@ -1,5 +1,5 @@
-/* client_gui.c */
-#include <gtk/gtk.h>
+/* client_ncurses.c */
+#include <ncurses.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -9,151 +9,145 @@
 #include <netinet/in.h>
 #include <netdb.h>
 
-// Estrutura para passar widgets para a função de callback
-typedef struct {
-    GtkWidget *text_view_input;
-    GtkWidget *text_view_output;
-    GtkWidget *entry_ip;
-    GtkWidget *entry_port;
-} AppWidgets;
+#define SERVER_IP "127.0.0.1"
+#define SERVER_PORT 51482
+#define MAX_CODE_SIZE 4096
 
-void on_run_button_clicked(GtkWidget *widget, gpointer data) {
-    AppWidgets *app = (AppWidgets *)data;
-    GtkTextBuffer *buffer_in, *buffer_out;
-    GtkTextIter start, end;
-    char *code_text;
-    const char *ip_str, *port_str;
-    
-    // Obter texto do editor
-    buffer_in = gtk_text_view_get_buffer(GTK_TEXT_VIEW(app->text_view_input));
-    gtk_text_buffer_get_bounds(buffer_in, &start, &end);
-    code_text = gtk_text_buffer_get_text(buffer_in, &start, &end, FALSE);
-
-    // Obter IP e Porta
-    ip_str = gtk_entry_get_text(GTK_ENTRY(app->entry_ip));
-    port_str = gtk_entry_get_text(GTK_ENTRY(app->entry_port));
-    int portno = atoi(port_str);
-
-    // --- Lógica de Socket ---
+// Função para enviar o código ao servidor e receber a resposta
+void send_to_server(const char *code, char *response) {
     int sockfd, n;
     struct sockaddr_in serv_addr;
     struct hostent *server;
-    char response[4096];
 
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if (sockfd < 0) {
-        code_text = "Erro: Não foi possível abrir o socket.";
-        goto display_error;
+        strcpy(response, "Erro: Falha ao abrir socket.");
+        return;
     }
 
-    server = gethostbyname(ip_str);
+    server = gethostbyname(SERVER_IP);
     if (server == NULL) {
-        code_text = "Erro: Host não encontrado.";
-        goto display_error;
+        strcpy(response, "Erro: Host não encontrado.");
+        close(sockfd);
+        return;
     }
 
     bzero((char *) &serv_addr, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
     bcopy((char *)server->h_addr, (char *)&serv_addr.sin_addr.s_addr, server->h_length);
-    serv_addr.sin_port = htons(portno);
+    serv_addr.sin_port = htons(SERVER_PORT);
 
     if (connect(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
-        code_text = "Erro: Falha na conexão com o servidor.";
-        goto display_error;
+        strcpy(response, "Erro: Não foi possível conectar ao servidor.\nVerifique se ele está rodando.");
+        close(sockfd);
+        return;
     }
 
     // Enviar código
-    n = write(sockfd, code_text, strlen(code_text));
+    n = write(sockfd, code, strlen(code));
     if (n < 0) {
-        code_text = "Erro: Falha ao enviar dados.";
-        goto display_error;
+        strcpy(response, "Erro ao enviar dados.");
+        close(sockfd);
+        return;
     }
 
-    // Ler resposta
-    bzero(response, 4096);
-    n = read(sockfd, response, 4095);
-    if (n < 0) {
-        strcpy(response, "Erro ao ler resposta.");
-    }
+    // Receber resposta
+    bzero(response, MAX_CODE_SIZE);
+    // Loop simples para garantir leitura (embora o servidor mande tudo de uma vez no exemplo)
+    n = read(sockfd, response, MAX_CODE_SIZE - 1);
+    
+    if (n < 0) strcpy(response, "Erro ao ler resposta.");
     
     close(sockfd);
-
-    // Exibir no Output
-    buffer_out = gtk_text_view_get_buffer(GTK_TEXT_VIEW(app->text_view_output));
-    gtk_text_buffer_set_text(buffer_out, response, -1);
-    return;
-
-display_error:
-    buffer_out = gtk_text_view_get_buffer(GTK_TEXT_VIEW(app->text_view_output));
-    gtk_text_buffer_set_text(buffer_out, code_text, -1);
 }
 
-int main(int argc, char *argv[]) {
-    gtk_init(&argc, &argv);
+int main() {
+    int ch;
+    char code_buffer[MAX_CODE_SIZE] = "fn main() {\n    println!(\"Ola do Linux via NCurses!\");\n}";
+    char output_buffer[MAX_CODE_SIZE] = "Pressione F2 para Compilar e Rodar. F10 para Sair.";
+    int cursor_pos = strlen(code_buffer);
 
-    GtkWidget *window;
-    GtkWidget *grid;
-    GtkWidget *run_btn;
-    GtkWidget *scroll_in, *scroll_out;
-    GtkWidget *label_in, *label_out;
-    AppWidgets *widgets = g_slice_new(AppWidgets);
+    // Inicialização do NCurses
+    initscr();            // Inicia o modo curses
+    cbreak();             // Desabilita buffer de linha (pega caractere a caractere)
+    noecho();             // Não imprime automaticamente o que digita
+    keypad(stdscr, TRUE); // Habilita teclas especiais (F1, F2, setas)
+    start_color();        // Habilita cores
 
-    window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
-    gtk_window_set_title(GTK_WINDOW(window), "Cliente Rust Compiler");
-    gtk_window_set_default_size(GTK_WINDOW(window), 600, 500);
-    g_signal_connect(window, "destroy", G_CALLBACK(gtk_main_quit), NULL);
+    // Definição de pares de cores
+    init_pair(1, COLOR_WHITE, COLOR_BLUE);  // Janela de Código
+    init_pair(2, COLOR_GREEN, COLOR_BLACK); // Janela de Saída
+    init_pair(3, COLOR_BLACK, COLOR_CYAN);  // Rodapé/Menu
 
-    grid = gtk_grid_new();
-    gtk_container_add(GTK_CONTAINER(window), grid);
-    gtk_grid_set_row_spacing(GTK_GRID(grid), 5);
-    gtk_grid_set_column_spacing(GTK_GRID(grid), 5);
-    gtk_container_set_border_width(GTK_CONTAINER(window), 10);
+    int max_y, max_x;
+    getmaxyx(stdscr, max_y, max_x);
 
-    // Configuração IP/Porta
-    widgets->entry_ip = gtk_entry_new();
-    gtk_entry_set_text(GTK_ENTRY(widgets->entry_ip), "127.0.0.1");
-    widgets->entry_port = gtk_entry_new();
-    gtk_entry_set_text(GTK_ENTRY(widgets->entry_port), "51482");
-    
-    gtk_grid_attach(GTK_GRID(grid), gtk_label_new("IP:"), 0, 0, 1, 1);
-    gtk_grid_attach(GTK_GRID(grid), widgets->entry_ip, 1, 0, 1, 1);
-    gtk_grid_attach(GTK_GRID(grid), gtk_label_new("Porta:"), 2, 0, 1, 1);
-    gtk_grid_attach(GTK_GRID(grid), widgets->entry_port, 3, 0, 1, 1);
+    // Loop da Interface
+    while (1) {
+        clear();
 
-    // Área de Código (Input)
-    label_in = gtk_label_new("Código Rust:");
-    gtk_widget_set_halign(label_in, GTK_ALIGN_START);
-    gtk_grid_attach(GTK_GRID(grid), label_in, 0, 1, 4, 1);
+        // 1. Desenhar Cabeçalho e Rodapé
+        attron(COLOR_PAIR(3));
+        mvprintw(0, 0, " RUST COMPILER CLIENT (Linux Socket) ");
+        mvprintw(max_y - 1, 0, " F2: Executar | Backspace: Apagar | F10: Sair ");
+        for(int i=strlen(" RUST COMPILER CLIENT (Linux Socket) "); i<max_x; i++) mvaddch(0, i, ' ');
+        for(int i=strlen(" F2: Executar | Backspace: Apagar | F10: Sair "); i<max_x; i++) mvaddch(max_y - 1, i, ' ');
+        attroff(COLOR_PAIR(3));
 
-    widgets->text_view_input = gtk_text_view_new();
-    scroll_in = gtk_scrolled_window_new(NULL, NULL);
-    gtk_widget_set_size_request(scroll_in, 580, 200);
-    gtk_container_add(GTK_CONTAINER(scroll_in), widgets->text_view_input);
-    gtk_grid_attach(GTK_GRID(grid), scroll_in, 0, 2, 4, 1);
-    
-    // Código inicial de exemplo
-    GtkTextBuffer *buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(widgets->text_view_input));
-    gtk_text_buffer_set_text(buf, "fn main() {\n    println!(\"Ola do Servidor Linux!\");\n}", -1);
+        // 2. Janela de Edição (Cima)
+        attron(COLOR_PAIR(1));
+        mvprintw(1, 0, "--- EDITOR DE CODIGO ---");
+        // Preencher fundo
+        for(int y=2; y < max_y/2; y++) {
+            for(int x=0; x < max_x; x++) mvaddch(y, x, ' ');
+        }
+        mvprintw(2, 1, "%s", code_buffer);
+        attroff(COLOR_PAIR(1));
 
-    // Botão
-    run_btn = gtk_button_new_with_label("Compilar e Executar Remotamente");
-    g_signal_connect(run_btn, "clicked", G_CALLBACK(on_run_button_clicked), widgets);
-    gtk_grid_attach(GTK_GRID(grid), run_btn, 0, 3, 4, 1);
+        // 3. Janela de Saída (Baixo)
+        attron(COLOR_PAIR(2));
+        mvprintw(max_y/2, 0, "--- SAIDA DO COMPILADOR ---");
+        mvprintw((max_y/2) + 1, 0, "%s", output_buffer);
+        attroff(COLOR_PAIR(2));
 
-    // Área de Saída (Output)
-    label_out = gtk_label_new("Saída / Erros:");
-    gtk_widget_set_halign(label_out, GTK_ALIGN_START);
-    gtk_grid_attach(GTK_GRID(grid), label_out, 0, 4, 4, 1);
+        refresh();
 
-    widgets->text_view_output = gtk_text_view_new();
-    gtk_text_view_set_editable(GTK_TEXT_VIEW(widgets->text_view_output), FALSE); // Read only
-    scroll_out = gtk_scrolled_window_new(NULL, NULL);
-    gtk_widget_set_size_request(scroll_out, 580, 150);
-    gtk_container_add(GTK_CONTAINER(scroll_out), widgets->text_view_output);
-    gtk_grid_attach(GTK_GRID(grid), scroll_out, 0, 5, 4, 1);
+        // Captura de entrada
+        ch = getch();
 
-    gtk_widget_show_all(window);
-    gtk_main();
+        if (ch == KEY_F(10)) {
+            break; // Sair
+        }
+        else if (ch == KEY_F(2)) {
+            strcpy(output_buffer, "Enviando para o servidor... aguarde...");
+            // Força refresh para mostrar mensagem de carregamento
+            attron(COLOR_PAIR(2));
+            mvprintw((max_y/2) + 1, 0, "%s", output_buffer);
+            attroff(COLOR_PAIR(2));
+            refresh();
 
+            // Comunicação com o servidor
+            send_to_server(code_buffer, output_buffer);
+        }
+        else if (ch == KEY_BACKSPACE || ch == 127 || ch == '\b') {
+            if (cursor_pos > 0) {
+                code_buffer[--cursor_pos] = '\0';
+            }
+        }
+        else if (ch == '\n') {
+            if (cursor_pos < MAX_CODE_SIZE - 2) {
+                code_buffer[cursor_pos++] = '\n';
+                code_buffer[cursor_pos] = '\0';
+            }
+        }
+        else if (ch >= 32 && ch <= 126) { // Caracteres imprimíveis
+            if (cursor_pos < MAX_CODE_SIZE - 2) {
+                code_buffer[cursor_pos++] = ch;
+                code_buffer[cursor_pos] = '\0';
+            }
+        }
+    }
+
+    endwin(); // Encerra o modo curses
     return 0;
 }
