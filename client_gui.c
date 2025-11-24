@@ -1,5 +1,5 @@
 /* client_gui.c */
-#include <gtk.h>
+#include <gtk/gtk.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
