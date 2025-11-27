@@ -1,26 +1,20 @@
 ## Como Compilar e Rodar
 
-Primeiramente, defina o IP do Servidor no arquivo `client_gui.c`, na seção `#define SERVER_IP "192.168.99.23"`
+1. **Instale os pré-requisitos:**
 
-A biblioteca `ncurses` geralmente já vem instalada. Caso precise dos headers (raro não ter em ambientes educacionais, mas possível), instale `libncurses5-dev` ou `ncurses-devel`.
-
-1. **Compilar:**
-   Você precisa "ligar" a biblioteca com a flag `-lncurses`.
-
-   ```bash
-   gcc client_gui.c -o client_gui -lncurses
-   ```
-2. **Rodar:**
-   Certifique-se de que o servidor (`server_rust` criado na resposta anterior) está rodando em um terminal.
-
-   Terminal 1 (Servidor):
+   * Compilador Rust: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
+   * Bibliotecas GTK3: `sudo apt-get install libgtk-3-dev`
+2. **Compile o Servidor:**
 
    ```bash
-   ./server_rust 51482
+   gcc server_rust.c -o server_rust
    ```
-
-   Terminal 2 (Cliente):
+3. **Compile o Cliente Gráfico:**
 
    ```bash
-   ./client_gui
+   gcc client_gui.c -o client_gui `pkg-config --cflags --libs gtk+-3.0`
    ```
+4. **Execute:**
+
+   * Terminal 1: `./server_rust 51482`
+   * Terminal 2: `./client_gui` (Digite o código e clique no botão).
