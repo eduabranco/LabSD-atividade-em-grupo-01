@@ -2,7 +2,7 @@
 
 1. **Instale os pré-requisitos:**
 
-   * Compilador Rust: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
+   * Compilador Rust: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustups | sh`
    * Bibliotecas GTK3: `sudo apt-get install libgtk-3-dev`
 2. **Compile o Servidor:**
 

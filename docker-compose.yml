@@ -1,38 +1,46 @@
 version: '3.8'
 
 services:
-  compiler_server:
+  server:
     build:
       context: .
-      dockerfile: Dockerfile
-    container_name: compiler_server
-    environment:
-      - RUST_LOG=debug
+      dockerfile: server/Dockerfile
+    container_name: rust_compiler_server
     ports:
-      - "8080:8080"
+      - "51482:51482"
     networks:
-      - app-network
-    command: /bin/bash -c "cd trabalho_sockets_rust && cargo run --release --bin compiler_server"
+      - compiler-network
+    environment:
+      - PORT=51482
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "netstat", "-tuln", "|", "grep", "51482"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
 
-  client_gui:
+  client:
     build:
       context: .
-      dockerfile: Dockerfile
-    container_name: client_gui
+      dockerfile: client/Dockerfile
+    container_name: rust_compiler_client
     depends_on:
-      - compiler_server
+      server:
+        condition: service_healthy
+    networks:
+      - compiler-network
     environment:
       - DISPLAY=${DISPLAY}
-      - RUST_LOG=debug
+      - SERVER_HOST=server
+      - SERVER_PORT=51482
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ~/.Xauthority:/root/.Xauthority:rw
-    networks:
-      - app-network
-    command: /bin/bash -c "cd trabalho_sockets_rust && cargo run --release --bin client_gui"
     restart: unless-stopped
+    stdin_open: true
+    tty: true
 
 networks:
-  app-network:
+  compiler-network:
     driver: bridge
