@@ -2,9 +2,9 @@ import socket
 import threading
 import time
 
-HOST = '127.0.0.1'
-PORT = 51482
-NUM_REQUESTS = 500  # Quantidade de conexões para tentar
+HOST = input("Digite o endereco IP do servidor: ")
+PORT = int(input("Digite a porta do servidor: "))
+NUM_REQUESTS = int(input("Digite a quantidade de conexões para tentar: "))  # Quantidade de conexões para tentar
 
 def client_task(i):
     try:
