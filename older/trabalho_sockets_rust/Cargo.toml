@@ -1,0 +1,10 @@
+[package]
+name = "trabalho_sockets_rust"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+egui = "0.24"   # Biblioteca de UI imediata
+eframe = "0.24" # Ou versão mais recente
+tokio = { version = "1", features = ["full"] }
+uuid = { version = "1", features = ["v4"] }
