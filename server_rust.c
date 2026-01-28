@@ -1,4 +1,5 @@
-/* server_rust.c */
+/* server_rust_fixed.c */
+#define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -7,6 +8,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
 #include <fcntl.h>
 
 void error(const char *msg) {
@@ -18,13 +20,24 @@ void sigchld_handler(int s) {
     while(waitpid(-1, NULL, WNOHANG) > 0);
 }
 
-// Função para processar a compilação e execução
+// Function to reliably write all bytes to a file descriptor
+ssize_t write_all(int fd, const void *buf, size_t count) {
+    size_t written = 0;
+    const char *ptr = buf;
+    while (written < count) {
+        ssize_t n = write(fd, ptr + written, count - written);
+        if (n == -1) return -1;
+        written += n;
+    }
+    return written;
+}
+
 void process_rust_code(int sock) {
     char buffer[4096];
-    char output[4096];
-    int n;
+    char output[8192];
+    ssize_t n;
 
-    // 1. Receber o código fonte do cliente
+    // 1. Read source code
     bzero(buffer, 4096);
     n = read(sock, buffer, 4095);
     if (n < 0) {
@@ -32,42 +45,68 @@ void process_rust_code(int sock) {
         return;
     }
 
-    // 2. Salvar o código em um arquivo temporário (temp.rs)
-    // Em um sistema real, usaríamos nomes aleatórios (mktemp) para evitar colisão
-    FILE *fp = fopen("temp.rs", "w");
-    if (fp == NULL) {
-        write(sock, "Server Error: Cannot write file\n", 32);
+    // 2. Create a unique temporary directory for this request
+    char temp_dir[] = "/tmp/rust_job_XXXXXX";
+    if (mkdtemp(temp_dir) == NULL) {
+        perror("mkdtemp");
+        write(sock, "Server Error: Could not create temp dir\n", 40);
         return;
     }
-    fprintf(fp, "%s", buffer);
-    fclose(fp);
 
-    // 3. Compilar (capturando stderr para ver erros)
-    // rustc temp.rs -o temp_exec 2> result.txt
-    int compile_status = system("rustc temp.rs -o temp_exec 2> result.txt");
+    // Construct file paths
+    char src_file[256], bin_file[256], out_file[256], cmd[1024];
+    snprintf(src_file, sizeof(src_file), "%s/main.rs", temp_dir);
+    snprintf(bin_file, sizeof(bin_file), "%s/main", temp_dir);
+    snprintf(out_file, sizeof(out_file), "%s/output.txt", temp_dir);
+
+    // Write buffer to main.rs
+    int fd = open(src_file, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    if (fd < 0) {
+        perror("open src");
+        goto cleanup;
+    }
+    write_all(fd, buffer, n);
+    close(fd);
+
+    // 3. Compile: rustc /tmp/xxx/main.rs -o /tmp/xxx/main
+    snprintf(cmd, sizeof(cmd), "rustc \"%s\" -o \"%s\" > \"%s\" 2>&1", src_file, bin_file, out_file);
+    int compile_status = system(cmd);
+
+    bzero(output, sizeof(output));
 
     if (compile_status != 0) {
-        // Erro de compilação
-        FILE *err_file = fopen("result.txt", "r");
-        bzero(output, 4096);
-        strcat(output, "COMPILATION ERROR:\n");
-        fread(output + 19, 1, 4000, err_file);
-        write(sock, output, strlen(output));
-        fclose(err_file);
+        // Compilation Failed
+        strcat(output, "--- COMPILATION ERROR ---\n");
+        int out_fd = open(out_file, O_RDONLY);
+        if (out_fd >= 0) {
+            ssize_t r = read(out_fd, output + strlen(output), 4000);
+            close(out_fd);
+        }
     } else {
-        // Sucesso na compilação, agora executar: ./temp_exec > result.txt 2>&1
-        system("./temp_exec > result.txt 2>&1");
+        // Compilation Success - Execute
+        // Using 'timeout' command to prevent infinite loops (5 seconds limit)
+        snprintf(cmd, sizeof(cmd), "timeout 5s \"%s\" > \"%s\" 2>&1", bin_file, out_file);
+        int run_status = system(cmd);
         
-        FILE *out_file = fopen("result.txt", "r");
-        bzero(output, 4096);
-        strcat(output, "OUTPUT:\n");
-        fread(output + 8, 1, 4000, out_file);
-        write(sock, output, strlen(output));
-        fclose(out_file);
+        if (run_status == 124 * 256) { // timeout exit code 124
+             strcat(output, "--- EXECUTION TIMED OUT ---\n");
+        } else {
+             strcat(output, "--- OUTPUT ---\n");
+             int out_fd = open(out_file, O_RDONLY);
+             if (out_fd >= 0) {
+                 ssize_t r = read(out_fd, output + strlen(output), 4000);
+                 close(out_fd);
+             }
+        }
     }
 
-    // Limpeza
-    system("rm -f temp.rs temp_exec result.txt");
+    // Send response
+    write_all(sock, output, strlen(output));
+
+cleanup:
+    // Clean up temporary directory: rm -rf /tmp/rust_job_XXXXXX
+    snprintf(cmd, sizeof(cmd), "rm -rf \"%s\"", temp_dir);
+    system(cmd);
 }
 
 int main(int argc, char *argv[]) {
@@ -96,19 +135,22 @@ int main(int argc, char *argv[]) {
     if (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0)
         error("ERROR on binding");
 
-    listen(sockfd, 5);
+    listen(sockfd, 50); // Increased backlog
     
     sa.sa_handler = sigchld_handler;
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = SA_RESTART;
     sigaction(SIGCHLD, &sa, NULL);
 
-    printf("Servidor Rust rodando na porta %d...\n", portno);
+    printf("Fixed Rust Server running on port %d...\n", portno);
 
     while(1) {
         clilen = sizeof(cli_addr);
         newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
-        if (newsockfd < 0) error("ERROR on accept");
+        if (newsockfd < 0) {
+             if (errno == EINTR) continue;
+             error("ERROR on accept");
+        }
 
         int pid = fork();
         if (pid < 0) error("ERROR on fork");
