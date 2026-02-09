@@ -51,7 +51,7 @@ void process_rust_code(int sock) {
     }
 
     // Heuristica simples: Se não encontrar "fn main", adiciona uma fake main para compilar
-    if (!is_test && strstr(buOUTPUT:ffer, "fn main") == NULL) {
+    if (!is_test && strstr(buffer, "fn main") == NULL) {
         fprintf(fp, "\n\nfn main() { \n    println!(\"Warning: No main function found. Code compiled assuming library usage.\"); \n}");
     }
 
