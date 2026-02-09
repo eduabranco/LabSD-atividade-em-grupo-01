@@ -8,14 +8,18 @@
 #include <netinet/in.h>
 #include <sys/wait.h>
 #include <fcntl.h>
+#include <errno.h>
+
+void sigchld_handler(int s) {
+    // waitpid() might overwrite errno, so we save and restore it:
+    int saved_errno = errno;
+    while(waitpid(-1, NULL, WNOHANG) > 0);
+    errno = saved_errno;
+}
 
 void error(const char *msg) {
     perror(msg);
     exit(1);
-}
-
-void sigchld_handler(int s) {
-    while(waitpid(-1, NULL, WNOHANG) > 0);
 }
 
 // Função para processar a compilação e execução
@@ -40,11 +44,27 @@ void process_rust_code(int sock) {
         return;
     }
     fprintf(fp, "%s", buffer);
+
+    int is_test = 0;
+    if (strstr(buffer, "#[test]") != NULL || strstr(buffer, "test") != NULL && strstr(buffer, "#[cfg(test)]") != NULL) {
+        is_test = 1;
+    }
+
+    // Heuristica simples: Se não encontrar "fn main", adiciona uma fake main para compilar
+    if (!is_test && strstr(buOUTPUT:ffer, "fn main") == NULL) {
+        fprintf(fp, "\n\nfn main() { \n    println!(\"Warning: No main function found. Code compiled assuming library usage.\"); \n}");
+    }
+
     fclose(fp);
 
     // 3. Compilar (capturando stderr para ver erros)
-    // rustc temp.rs -o temp_exec 2> result.txt
-    int compile_status = system("rustc temp.rs -o temp_exec 2> result.txt");
+    char command[512];
+    if (is_test) {
+        snprintf(command, sizeof(command), "rustc --test temp.rs -o temp_exec 2> result.txt");
+    } else {
+        snprintf(command, sizeof(command), "rustc temp.rs -o temp_exec 2> result.txt");
+    }
+    int compile_status = system(command);
 
     if (compile_status != 0) {
         // Erro de compilação
