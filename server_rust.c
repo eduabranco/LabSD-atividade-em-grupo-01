@@ -11,6 +11,7 @@
 #include <errno.h>
 
 void sigchld_handler(int s) {
+    (void)s; // Silence unused parameter warning
     // waitpid() might overwrite errno, so we save and restore it:
     int saved_errno = errno;
     while(waitpid(-1, NULL, WNOHANG) > 0);
@@ -28,17 +29,26 @@ void process_rust_code(int sock) {
     char output[4096];
     int n;
 
+    // Gerar arquivos únicos usando PID para evitar condições de corrida
+    int pid = getpid();
+    char src_file[64];
+    char exec_file[64];
+    char out_file[64];
+    
+    snprintf(src_file, sizeof(src_file), "temp_%d.rs", pid);
+    snprintf(exec_file, sizeof(exec_file), "temp_%d_exec", pid);
+    snprintf(out_file, sizeof(out_file), "result_%d.txt", pid);
+
     // 1. Receber o código fonte do cliente
-    bzero(buffer, 4096);
+    memset(buffer, 0, 4096);
     n = read(sock, buffer, 4095);
     if (n < 0) {
         perror("ERROR reading from socket");
         return;
     }
 
-    // 2. Salvar o código em um arquivo temporário (temp.rs)
-    // Em um sistema real, usaríamos nomes aleatórios (mktemp) para evitar colisão
-    FILE *fp = fopen("temp.rs", "w");
+    // 2. Salvar o código em um arquivo temporário
+    FILE *fp = fopen(src_file, "w");
     if (fp == NULL) {
         write(sock, "Server Error: Cannot write file\n", 32);
         return;
@@ -46,7 +56,7 @@ void process_rust_code(int sock) {
     fprintf(fp, "%s", buffer);
 
     int is_test = 0;
-    if (strstr(buffer, "#[test]") != NULL || strstr(buffer, "test") != NULL && strstr(buffer, "#[cfg(test)]") != NULL) {
+    if (strstr(buffer, "#[test]") != NULL || (strstr(buffer, "test") != NULL && strstr(buffer, "#[cfg(test)]") != NULL)) {
         is_test = 1;
     }
 
@@ -60,34 +70,44 @@ void process_rust_code(int sock) {
     // 3. Compilar (capturando stderr para ver erros)
     char command[512];
     if (is_test) {
-        snprintf(command, sizeof(command), "rustc --test temp.rs -o temp_exec 2> result.txt");
+        snprintf(command, sizeof(command), "rustc --test %s -o %s 2> %s", src_file, exec_file, out_file);
     } else {
-        snprintf(command, sizeof(command), "rustc temp.rs -o temp_exec 2> result.txt");
+        snprintf(command, sizeof(command), "rustc %s -o %s 2> %s", src_file, exec_file, out_file);
     }
     int compile_status = system(command);
 
     if (compile_status != 0) {
         // Erro de compilação
-        FILE *err_file = fopen("result.txt", "r");
-        bzero(output, 4096);
-        strcat(output, "COMPILATION ERROR:\n");
-        fread(output + 19, 1, 4000, err_file);
-        write(sock, output, strlen(output));
-        fclose(err_file);
+        FILE *err_file = fopen(out_file, "r");
+        if (err_file) {
+            memset(output, 0, 4096);
+            strcat(output, "COMPILATION ERROR:\n");
+            fread(output + 19, 1, 4000, err_file);
+            write(sock, output, strlen(output));
+            fclose(err_file);
+        } else {
+             write(sock, "Server Error: Cannot read compilation error log\n", 48);
+        }
     } else {
-        // Sucesso na compilação, agora executar: ./temp_exec > result.txt 2>&1
-        system("./temp_exec > result.txt 2>&1");
+        // Sucesso na compilação, agora executar
+        snprintf(command, sizeof(command), "./%s > %s 2>&1", exec_file, out_file);
+        system(command);
         
-        FILE *out_file = fopen("result.txt", "r");
-        bzero(output, 4096);
-        strcat(output, "OUTPUT:\n");
-        fread(output + 8, 1, 4000, out_file);
-        write(sock, output, strlen(output));
-        fclose(out_file);
+        FILE *out_file_fp = fopen(out_file, "r");
+        if (out_file_fp) {
+            memset(output, 0, 4096);
+            strcat(output, "OUTPUT:\n");
+            fread(output + 8, 1, 4000, out_file_fp);
+            write(sock, output, strlen(output));
+            fclose(out_file_fp);
+        } else {
+             write(sock, "Server Error: Cannot read output log\n", 37);
+        }
     }
 
     // Limpeza
-    system("rm -f temp.rs temp_exec result.txt");
+    snprintf(command, sizeof(command), "rm -f %s %s %s", src_file, exec_file, out_file);
+    system(command);
 }
 
 int main(int argc, char *argv[]) {
@@ -107,7 +127,7 @@ int main(int argc, char *argv[]) {
     int opt = 1;
     setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
-    bzero((char *) &serv_addr, sizeof(serv_addr));
+    memset((char *) &serv_addr, 0, sizeof(serv_addr));
     portno = atoi(argv[1]);
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_addr.s_addr = INADDR_ANY;

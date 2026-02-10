@@ -36,7 +36,7 @@ int main(int argc, char *argv[]) {
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if (sockfd < 0) error("ERROR opening socket");
     
-    bzero((char *) &serv_addr, sizeof(serv_addr));
+    memset(&serv_addr, 0, sizeof(serv_addr));
     portno = atoi(argv[1]);
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_addr.s_addr = INADDR_ANY;
@@ -79,7 +79,7 @@ int main(int argc, char *argv[]) {
             // PROCESSO FILHO (trata o cliente)
             close(sockfd); // Filho não precisa do socket de escuta
             
-            bzero(buffer, 256);
+            memset(buffer, 0, 256);
             n = read(newsockfd, buffer, 255);
             if (n < 0) error("ERROR reading from socket");
             

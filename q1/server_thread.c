@@ -23,7 +23,7 @@ void *handle_client(void *arg) {
     // "Detach" permite que a thread libere recursos automaticamente ao terminar
     pthread_detach(pthread_self());
 
-    bzero(buffer, 256);
+    memset(buffer, 0, 256);
     n = read(newsockfd, buffer, 255);
     if (n < 0) {
         perror("ERROR reading from socket");
@@ -54,7 +54,7 @@ int main(int argc, char *argv[]) {
     int opt = 1;
     setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
-    bzero((char *) &serv_addr, sizeof(serv_addr));
+    memset((char *) &serv_addr, 0, sizeof(serv_addr));
     portno = atoi(argv[1]);
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_addr.s_addr = INADDR_ANY;

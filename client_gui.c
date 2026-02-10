@@ -18,6 +18,7 @@ typedef struct {
 } AppWidgets;
 
 void on_run_button_clicked(GtkWidget *widget, gpointer data) {
+    (void)widget; // Silenciar aviso de parâmetro não usado
     AppWidgets *app = (AppWidgets *)data;
     GtkTextBuffer *buffer_in, *buffer_out;
     GtkTextIter start, end;
@@ -52,9 +53,9 @@ void on_run_button_clicked(GtkWidget *widget, gpointer data) {
         goto display_error;
     }
 
-    bzero((char *) &serv_addr, sizeof(serv_addr));
+    memset((char *) &serv_addr, 0, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
-    bcopy((char *)server->h_addr, (char *)&serv_addr.sin_addr.s_addr, server->h_length);
+    memcpy((char *)&serv_addr.sin_addr.s_addr, (char *)server->h_addr, server->h_length);
     serv_addr.sin_port = htons(portno);
 
     if (connect(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
@@ -70,7 +71,7 @@ void on_run_button_clicked(GtkWidget *widget, gpointer data) {
     }
 
     // Ler resposta
-    bzero(response, 4096);
+    memset(response, 0, 4096);
     n = read(sockfd, response, 4095);
     if (n < 0) {
         strcpy(response, "Erro ao ler resposta.");

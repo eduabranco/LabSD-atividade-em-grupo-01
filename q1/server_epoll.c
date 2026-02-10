@@ -6,7 +6,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <fcntl.h>      // Para manipulação de arquivos (non-blocking)
-#include <sys/epoll.h>  // A estrela do show
+#include <sys/epoll.h>  // Para epoll
 #include <errno.h>
 
 #define MAX_EVENTS 10000 // Quantos eventos processar por vez
@@ -18,7 +18,7 @@ void error(const char *msg) {
 }
 
 // Função auxiliar para colocar um socket em modo Não-Bloqueante
-// Isso é CRUCIAL para arquiteturas baseadas em eventos.
+// CRUCIAL para arquiteturas baseadas em eventos.
 int set_nonblocking(int fd) {
     int flags = fcntl(fd, F_GETFL, 0);
     if (flags == -1) return -1;
@@ -47,7 +47,7 @@ int main(int argc, char *argv[]) {
     int opt = 1;
     setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
-    bzero((char *) &serv_addr, sizeof(serv_addr));
+    memset((char *) &serv_addr, 0, sizeof(serv_addr));
     portno = atoi(argv[1]);
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_addr.s_addr = INADDR_ANY;
@@ -58,9 +58,7 @@ int main(int argc, char *argv[]) {
 
     listen(sockfd, SOMAXCONN); // SOMAXCONN permite o máximo que o SO suportar
 
-    // -------------------------------------------------------
     // 2. Configuração do EPOLL
-    // -------------------------------------------------------
 
     // Cria a instância do epoll
     epoll_fd = epoll_create1(0);
@@ -76,9 +74,8 @@ int main(int argc, char *argv[]) {
 
     printf("Servidor Epoll rodando na porta %d...\n", portno);
 
-    // -------------------------------------------------------
     // 3. O Loop de Eventos (Event Loop)
-    // -------------------------------------------------------
+
     while (1) {
         // epoll_wait bloqueia o processo até que ALGO aconteça em QUALQUER socket monitorado
         // n_ready é o número de sockets que têm atividade agora
@@ -119,7 +116,7 @@ int main(int argc, char *argv[]) {
             // CASO 2: Atividade em um Socket de Cliente = Dados recebidos
             else {
                 int client_fd = events[i].data.fd;
-                bzero(buffer, BUFFER_SIZE);
+                memset(buffer, 0, BUFFER_SIZE);
                 
                 // Tenta ler dados
                 ssize_t count = read(client_fd, buffer, sizeof(buffer));
